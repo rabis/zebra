@@ -9,6 +9,11 @@ from molmod.io import FCHKFile
 import os, numpy, sys
 
 def log_finished(fn_log):
+    """Return True if the Gaussian computation file has properly terminated.
+
+       Arguments:
+        | fn_log  --  The filename of the Gaussian log file.
+    """
     f = open(fn_log)
     for line in f:
         #print line
