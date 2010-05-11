@@ -25,6 +25,7 @@ def log_finished(fn_log):
 
 
 def run_gaussian(mol, coordinates, prefix):
+    """this function creates the input file and then submit it to bull. Then if the job is done, it will convert the checkpoint file to a formatted one"""
     # 1) create the input file
     f = file("{0}.com".format(prefix), "w")
     print >> f, "%Nproc=1"
@@ -49,32 +50,99 @@ def run_gaussian(mol, coordinates, prefix):
             os.system("formchk {0}.chk {0}.fchk".format(prefix))
         # 3) read the formatted checkpoint file
         fchk = FCHKFile("{0}.fchk".format(prefix))
+        print "Job %s successful" % prefix
         return fchk.fields["Total Energy"], fchk.fields["Cartesian Gradient"]
+    print "Job %s not ready (yet)" % prefix
+    return None
+
+
+class Scaling(object):
+    def __init__(self, name, indexes, center=None):
+        """
+           Arguments:
+            | name  --  name of the internal coordinate
+            | indexes -- list of atom number (starting from zero, so it is one less than gaussview)
+            | center -- is the origin of the scaling
+            """
+        self.name = name
+        self.indexes = indexes
+        self.center = center
+        
+    def get_center(self, coordinates_in):
+        """this method return center: there are two cases:
+            1) when you have not specified center, then it will choose the average of the chosen indexes
+             2) you have specified center, then it is the center.
+       """
+        if self.center is None:
+            center = coordinates_in[self.indexes].mean(axis=0)
+        else:
+            center = self.center
+        return center
+            
+    def transform(self, coordinates_in, q):
+        """this method return new transformed coordinates. First it copies the old coordinates, and then it transforms to a new coordinates
+        Arguments:
+        |coordinates_out: new transformed coordinates
+        """
+        coordinates_out = coordinates_in.copy()
+        center = self.get_center(coordinates_in)
+        for i in self.indexes:
+            coordinates_out[i] = (1+q)*(coordinates_in[i]-center) + center
+        return coordinates_out
+
+    def derivatives(self, coordinates_in, q):
+        """ this method return first derivative(called result) it is defined as initial coordinates minus the center
+        Arguments:
+        |result : derivative 
+        """
+        result = numpy.zeros(coordinates_in.shape, float)
+        center = self.get_center(coordinates_in)
+        for i in self.indexes:
+            result[i] = (coordinates_in[i]-center) 
+        return result
 
 
 def main():
+    """ here we choose the different scaling that we want to do scaling class on it
+    Arguments : ics -- it will keep all the different scalings
+    """
+                
+    scaling1 = Scaling("first", [1,2,3,5], numpy.array([0.1, 1.3, -1.0]))
+    scaling2 = Scaling("second", [3,5,6])
+    scaling3 = Scaling("third", [1,5,7])
+    ics = [scaling1, scaling2, scaling3]
+
     prefix = sys.argv[1]
     fn_xyz = "{0}.xyz".format(prefix) # First argument from command line
     mol = Molecule.from_file(fn_xyz)
-
-    q0 = 1.1
-    c0 = q0*mol.coordinates
-    result0 = run_gaussian(mol, c0, prefix+"0")
-
-    eps = 1e-4
-    q1 = q0 + eps
-    c1 = q1*mol.coordinates
-    result1 = run_gaussian(mol, c1, prefix+"1")
-
-    if not (result0 is None or result1 is None):
-        energy0, gradient0 = result0
-        energy1, gradient1 = result1
-        gradq0 = numpy.dot(gradient0, mol.coordinates.ravel())
-        gradq1 = numpy.dot(gradient1, mol.coordinates.ravel())
-        secondgrad = (gradq1 - gradq0)/eps
-        print "original gradient is:", gradq0
-        print "new gradient is:", gradq1
-        print "second order gradient is:", secondgrad
+    eps = 1e-5
+    results = [] 
+    ready = True
+    for ic in ics:
+        result_m = run_gaussian(mol, ic.transform(mol.coordinates,-0.5*eps), prefix + "_" + ic.name + "_m")
+        result_p = run_gaussian(mol, ic.transform(mol.coordinates,+0.5*eps), prefix + "_" + ic.name + "_p")
+        results.append((result_m, result_p))
+        if (result_m is None or result_p is None):
+            ready = False
+   
+    if ready:
+        hessian = numpy.zeros((len(ics), len(ics)), float)
+        for i in xrange(len(ics)): # finite difference
+            for j in xrange(len(ics)): # analytical derivation
+                energy0, gradient0 = results[i][0] # minus
+                energy1, gradient1 = results[i][1] # plus
+                ic = ics[j]
+                gradq0 = numpy.dot(gradient0, ic.derivatives(mol.coordinates,-0.5*eps).ravel())
+                gradq1 = numpy.dot(gradient1, ic.derivatives(mol.coordinates,+0.5*eps).ravel())
+                
+                hessian[i,j] = (gradq1 - gradq0)/eps
+                print "original gradient is:", gradq0
+                print "new gradient is:", gradq1
+                print "second order gradient is:", hessian[i,j]
+        
+        print hessian
+        hessian = 0.5*(hessian + hessian.transpose())
+        print hessian
 
 
 if __name__ == "__main__":
