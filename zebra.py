@@ -56,7 +56,18 @@ def run_gaussian(mol, coordinates, prefix):
     return None
 
 
-class Scaling(object):
+class InternalCoordinate(object):
+    def transform(self, coordinates_in, q):
+        raise NotImplementedError
+
+    def derivatives(self, coordinates_in, q):
+        raise NotImplementedError
+
+    def compute_norm(self, coordinates_in):
+        return numpy.linalg.norm(self.derivatives(coordinates_in, 0, normalized=False))
+
+
+class Scaling(InternalCoordinate):
     def __init__(self, name, indexes, center=None):
         """
            Arguments:
@@ -86,11 +97,12 @@ class Scaling(object):
         """
         coordinates_out = coordinates_in.copy()
         center = self.get_center(coordinates_in)
+        qp = q/self.compute_norm(coordinates_in)
         for i in self.indexes:
-            coordinates_out[i] = (1+q)*(coordinates_in[i]-center) + center
+            coordinates_out[i] = (1+qp)*(coordinates_in[i]-center) + center
         return coordinates_out
 
-    def derivatives(self, coordinates_in, q):
+    def derivatives(self, coordinates_in, q, normalized=True):
         """ this method return first derivative(called result) it is defined as initial coordinates minus the center
         Arguments:
         |result : derivative 
@@ -98,8 +110,107 @@ class Scaling(object):
         result = numpy.zeros(coordinates_in.shape, float)
         center = self.get_center(coordinates_in)
         for i in self.indexes:
-            result[i] = (coordinates_in[i]-center) 
-        return result
+            result[i] = (coordinates_in[i]-center)
+        if normalized:
+            norm = self.compute_norm(coordinates_in)
+        else:
+            norm = 1
+        return result/norm
+
+
+class Translation(InternalCoordinate):
+    def __init__(self, name, indexes, direction):
+        """
+           Arguments:
+            | name  --  name of the internal coordinate
+            | indexes -- list of atom number (starting from zero, so it is one less than gaussview)
+            | center -- is the origin of the scaling
+            """
+        self.name = name
+        self.indexes = indexes
+        self.direction = direction
+            
+    def transform(self, coordinates_in, q):
+        """this method return new transformed coordinates. First it copies the old coordinates, and then it transforms to a new coordinates
+        Arguments:
+        |coordinates_out: new transformed coordinates
+        """
+        coordinates_out = coordinates_in.copy()
+        qp = q/self.compute_norm(coordinates_in)
+        for i in self.indexes:
+            coordinates_out[i] = qp*self.direction + (coordinates_in[i]) 
+        return coordinates_out
+
+    def derivatives(self, coordinates_in, q, normalized=True):
+        """ this method return first derivative(called result) it is defined as initial coordinates minus the center
+        Arguments:
+        |result : derivative 
+        """
+        result = numpy.zeros(coordinates_in.shape, float)
+        for i in self.indexes:
+            result[i] = self.direction
+        if normalized:
+            norm = self.compute_norm(coordinates_in)
+        else:
+            norm = 1
+        return result/norm
+        
+        
+class Rotation(InternalCoordinate):
+    def __init__(self, name, indexes, axis, center=None):
+        """
+           Arguments:
+            | name  --  name of the internal coordinate
+            | indexes -- list of atom number (starting from zero, so it is one less than gaussview)
+            | center -- is the origin of the scaling
+            """
+        self.name = name
+        self.indexes = indexes
+        self.center = center
+        self.axis = axis
+        
+    def get_center(self, coordinates_in):
+        """this method return center: there are two cases:
+            1) when you have not specified center, then it will choose the average of the chosen indexes
+             2) you have specified center, then it is the center.
+       """
+        if self.center is None:
+            center = coordinates_in[self.indexes].mean(axis=0)
+        else:
+            center = self.center
+        return center
+            
+    def transform(self, coordinates_in, q):
+        """this method return new transformed coordinates. First it copies the old coordinates, and then it transforms to a new coordinates
+        Arguments:
+        |coordinates_out: new transformed coordinates
+        """
+        coordinates_out = coordinates_in.copy()
+        center = self.get_center(coordinates_in)
+        qp = q/self.compute_norm(coordinates_in)
+        for i in self.indexes:
+            v1 = coordinates_in[i] - center
+            v2 = v1*numpy.cos(qp) + numpy.cross(self.axis, v1)*numpy.sin(qp) + self.axis*(numpy.dot(self.axis, v1))*(1-numpy.cos(qp))
+            coordinates_out[i] = v2 + center
+        return coordinates_out
+
+    def derivatives(self, coordinates_in, q, normalized=True):
+        """ this method return first derivative(called result) it is defined as initial coordinates minus the center
+        Arguments:
+        |result : derivative 
+        """
+        result = numpy.zeros(coordinates_in.shape, float)
+        center = self.get_center(coordinates_in)
+        if normalized:
+            norm = self.compute_norm(coordinates_in)
+            qp = q/norm
+        else:
+            qp = 1
+            norm = 1
+        for i in self.indexes:
+            v1 = coordinates_in[i] - center
+            result[i] = -v1*numpy.sin(qp) + (numpy.cross(self.axis, v1)*numpy.cos(qp)) + self.axis*(numpy.dot(self.axis, v1))*numpy.sin(qp)
+        return result/norm
 
 
 def main():
@@ -107,10 +218,13 @@ def main():
     Arguments : ics -- it will keep all the different scalings
     """
                 
-    scaling1 = Scaling("first", [1,2,3,5], numpy.array([0.1, 1.3, -1.0]))
-    scaling2 = Scaling("second", [3,5,6])
-    scaling3 = Scaling("third", [1,5,7])
-    ics = [scaling1, scaling2, scaling3]
+    ics = [
+        Scaling("scaling-1-2-3-5", [1,2,3,5], numpy.array([0.1, 1.3, -1.0])), 
+        Scaling("scaling-3-5-6", [3,5,6]), 
+        Scaling("scaling-1-5-7", [1,5,7]),
+        Translation("translation-x-1-4-6", [1,4,6], numpy.array([1,0,0])),
+        Rotation("rotation-x-1-5-7", [1,5,7], numpy.array([1,0,0]))
+    ]
 
     prefix = sys.argv[1]
     fn_xyz = "{0}.xyz".format(prefix) # First argument from command line
