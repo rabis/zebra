@@ -57,14 +57,23 @@ def run_gaussian(mol, coordinates, prefix):
 
 
 class InternalCoordinate(object):
-    def transform(self, coordinates_in, q):
+    def transform_low(self, coordinates_in, q):
         raise NotImplementedError
 
-    def derivatives(self, coordinates_in, q):
+    def derivatives_low(self, coordinates_in, q):
         raise NotImplementedError
 
     def compute_norm(self, coordinates_in):
-        return numpy.linalg.norm(self.derivatives(coordinates_in, 0, normalized=False))
+        return numpy.linalg.norm(self.derivatives_low(coordinates_in, 0, normalized=False))
+
+    def transform(self, coordinates_in, epsilon):
+        q = epsilon/self.compute_norm(coordinates_in)
+        return self.transform_low(coordinates_in, q)
+
+    def derivatives(self, coordinates_in, epsilon):
+        norm = self.compute_norm(coordinates_in)
+        q = epsilon/norm
+        return self.derivatives_low(coordinates_in, q)/norm
 
 
 class Scaling(InternalCoordinate):
@@ -78,7 +87,7 @@ class Scaling(InternalCoordinate):
         self.name = name
         self.indexes = indexes
         self.center = center
-        
+
     def get_center(self, coordinates_in):
         """this method return center: there are two cases:
             1) when you have not specified center, then it will choose the average of the chosen indexes
@@ -89,33 +98,28 @@ class Scaling(InternalCoordinate):
         else:
             center = self.center
         return center
-            
-    def transform(self, coordinates_in, q):
+
+    def transform_low(self, coordinates_in, q):
         """this method return new transformed coordinates. First it copies the old coordinates, and then it transforms to a new coordinates
         Arguments:
         |coordinates_out: new transformed coordinates
         """
         coordinates_out = coordinates_in.copy()
         center = self.get_center(coordinates_in)
-        qp = q/self.compute_norm(coordinates_in)
         for i in self.indexes:
-            coordinates_out[i] = (1+qp)*(coordinates_in[i]-center) + center
+            coordinates_out[i] = (1+q)*(coordinates_in[i]-center) + center
         return coordinates_out
 
-    def derivatives(self, coordinates_in, q, normalized=True):
+    def derivatives_low(self, coordinates_in, q, normalized=True):
         """ this method return first derivative(called result) it is defined as initial coordinates minus the center
         Arguments:
-        |result : derivative 
+        |result : derivative
         """
         result = numpy.zeros(coordinates_in.shape, float)
         center = self.get_center(coordinates_in)
         for i in self.indexes:
             result[i] = (coordinates_in[i]-center)
-        if normalized:
-            norm = self.compute_norm(coordinates_in)
-        else:
-            norm = 1
-        return result/norm
+        return result
 
 
 class Translation(InternalCoordinate):
@@ -129,33 +133,28 @@ class Translation(InternalCoordinate):
         self.name = name
         self.indexes = indexes
         self.direction = direction
-            
-    def transform(self, coordinates_in, q):
+
+    def transform_low(self, coordinates_in, q):
         """this method return new transformed coordinates. First it copies the old coordinates, and then it transforms to a new coordinates
         Arguments:
         |coordinates_out: new transformed coordinates
         """
         coordinates_out = coordinates_in.copy()
-        qp = q/self.compute_norm(coordinates_in)
         for i in self.indexes:
-            coordinates_out[i] = qp*self.direction + (coordinates_in[i]) 
+            coordinates_out[i] = q*self.direction + (coordinates_in[i])
         return coordinates_out
 
-    def derivatives(self, coordinates_in, q, normalized=True):
+    def derivatives_low(self, coordinates_in, q, normalized=True):
         """ this method return first derivative(called result) it is defined as initial coordinates minus the center
         Arguments:
-        |result : derivative 
+        |result : derivative
         """
         result = numpy.zeros(coordinates_in.shape, float)
         for i in self.indexes:
             result[i] = self.direction
-        if normalized:
-            norm = self.compute_norm(coordinates_in)
-        else:
-            norm = 1
-        return result/norm
-        
-        
+        return result
+
+
 class Rotation(InternalCoordinate):
     def __init__(self, name, indexes, axis, center=None):
         """
@@ -168,7 +167,7 @@ class Rotation(InternalCoordinate):
         self.indexes = indexes
         self.center = center
         self.axis = axis
-        
+
     def get_center(self, coordinates_in):
         """this method return center: there are two cases:
             1) when you have not specified center, then it will choose the average of the chosen indexes
@@ -179,48 +178,41 @@ class Rotation(InternalCoordinate):
         else:
             center = self.center
         return center
-            
-    def transform(self, coordinates_in, q):
+
+    def transform_low(self, coordinates_in, q):
         """this method return new transformed coordinates. First it copies the old coordinates, and then it transforms to a new coordinates
         Arguments:
         |coordinates_out: new transformed coordinates
         """
         coordinates_out = coordinates_in.copy()
         center = self.get_center(coordinates_in)
-        qp = q/self.compute_norm(coordinates_in)
         for i in self.indexes:
             v1 = coordinates_in[i] - center
-            v2 = v1*numpy.cos(qp) + numpy.cross(self.axis, v1)*numpy.sin(qp) + self.axis*(numpy.dot(self.axis, v1))*(1-numpy.cos(qp))
+            v2 = v1*numpy.cos(q) + numpy.cross(self.axis, v1)*numpy.sin(q) + self.axis*(numpy.dot(self.axis, v1))*(1-numpy.cos(q))
             coordinates_out[i] = v2 + center
         return coordinates_out
 
-    def derivatives(self, coordinates_in, q, normalized=True):
+    def derivatives_low(self, coordinates_in, q, normalized=True):
         """ this method return first derivative(called result) it is defined as initial coordinates minus the center
         Arguments:
-        |result : derivative 
+        |result : derivative
         """
         result = numpy.zeros(coordinates_in.shape, float)
         center = self.get_center(coordinates_in)
-        if normalized:
-            norm = self.compute_norm(coordinates_in)
-            qp = q/norm
-        else:
-            qp = 1
-            norm = 1
         for i in self.indexes:
             v1 = coordinates_in[i] - center
-            result[i] = -v1*numpy.sin(qp) + (numpy.cross(self.axis, v1)*numpy.cos(qp)) + self.axis*(numpy.dot(self.axis, v1))*numpy.sin(qp)
-        return result/norm
+            result[i] = -v1*numpy.sin(q) + (numpy.cross(self.axis, v1)*numpy.cos(q)) + self.axis*(numpy.dot(self.axis, v1))*numpy.sin(q)
+        return result
 
 
 def main():
     """ here we choose the different scaling that we want to do scaling class on it
     Arguments : ics -- it will keep all the different scalings
     """
-                
+
     ics = [
-        Scaling("scaling-1-2-3-5", [1,2,3,5], numpy.array([0.1, 1.3, -1.0])), 
-        Scaling("scaling-3-5-6", [3,5,6]), 
+        Scaling("scaling-1-2-3-5", [1,2,3,5], numpy.array([0.1, 1.3, -1.0])),
+        Scaling("scaling-3-5-6", [3,5,6]),
         Scaling("scaling-1-5-7", [1,5,7]),
         Translation("translation-x-1-4-6", [1,4,6], numpy.array([1,0,0])),
         Rotation("rotation-x-1-5-7", [1,5,7], numpy.array([1,0,0]))
@@ -230,7 +222,7 @@ def main():
     fn_xyz = "{0}.xyz".format(prefix) # First argument from command line
     mol = Molecule.from_file(fn_xyz)
     eps = 1e-5
-    results = [] 
+    results = []
     ready = True
     for ic in ics:
         result_m = run_gaussian(mol, ic.transform(mol.coordinates,-0.5*eps), prefix + "_" + ic.name + "_m")
@@ -238,7 +230,7 @@ def main():
         results.append((result_m, result_p))
         if (result_m is None or result_p is None):
             ready = False
-   
+
     if ready:
         hessian = numpy.zeros((len(ics), len(ics)), float)
         for i in xrange(len(ics)): # finite difference
@@ -248,12 +240,12 @@ def main():
                 ic = ics[j]
                 gradq0 = numpy.dot(gradient0, ic.derivatives(mol.coordinates,-0.5*eps).ravel())
                 gradq1 = numpy.dot(gradient1, ic.derivatives(mol.coordinates,+0.5*eps).ravel())
-                
+
                 hessian[i,j] = (gradq1 - gradq0)/eps
                 print "original gradient is:", gradq0
                 print "new gradient is:", gradq1
                 print "second order gradient is:", hessian[i,j]
-        
+
         print hessian
         hessian = 0.5*(hessian + hessian.transpose())
         print hessian
