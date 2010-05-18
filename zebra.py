@@ -64,7 +64,7 @@ class InternalCoordinate(object):
         raise NotImplementedError
 
     def compute_norm(self, coordinates_in):
-        return numpy.linalg.norm(self.derivatives_low(coordinates_in, 0, normalized=False))
+        return numpy.linalg.norm(self.derivatives_low(coordinates_in, 0))
 
     def transform(self, coordinates_in, epsilon):
         q = epsilon/self.compute_norm(coordinates_in)
@@ -110,7 +110,7 @@ class Scaling(InternalCoordinate):
             coordinates_out[i] = (1+q)*(coordinates_in[i]-center) + center
         return coordinates_out
 
-    def derivatives_low(self, coordinates_in, q, normalized=True):
+    def derivatives_low(self, coordinates_in, q):
         """ this method return first derivative(called result) it is defined as initial coordinates minus the center
         Arguments:
         |result : derivative
@@ -144,7 +144,7 @@ class Translation(InternalCoordinate):
             coordinates_out[i] = q*self.direction + (coordinates_in[i])
         return coordinates_out
 
-    def derivatives_low(self, coordinates_in, q, normalized=True):
+    def derivatives_low(self, coordinates_in, q):
         """ this method return first derivative(called result) it is defined as initial coordinates minus the center
         Arguments:
         |result : derivative
@@ -192,7 +192,7 @@ class Rotation(InternalCoordinate):
             coordinates_out[i] = v2 + center
         return coordinates_out
 
-    def derivatives_low(self, coordinates_in, q, normalized=True):
+    def derivatives_low(self, coordinates_in, q):
         """ this method return first derivative(called result) it is defined as initial coordinates minus the center
         Arguments:
         |result : derivative
