@@ -205,6 +205,34 @@ class Rotation(InternalCoordinate):
         return result
 
 
+class Composition(InternalCoordinate):
+    def __init__(self, name, ic1, ic2):
+        """
+           Arguments:
+            | name  --  name of the internal coordinate
+            | indexes -- list of atom number (starting from zero, so it is one less than gaussview)
+            | center -- is the origin of the scaling
+            """
+        self.name = name
+        self.ic1 = ic1
+        self.ic2 = ic2
+
+    def transform_low(self, coordinates_in, q):
+        # todo something with self.ic1.transform_low(...) and self.ic2.transform_low(...)
+        coordinates_out = coordinates_in.copy()
+        T1 = self.ic1.transform_low(coordinates_in, q)
+        coordinates_out = self.ic2.transform_low(T1, q)
+        return coordinates_out
+
+    def derivatives_low(self, coordinates_in, q):
+        result = numpy.zeros(coordinates_in.shape, float)
+        D1 = self.ic1.derivatives_low(coordinates_in, q)
+        D2 = self.ic2.derivatives_low(coordinates_in, q)
+        result = D1 + D2
+        return result
+
+
+
 def main():
     """ here we choose the different scaling that we want to do scaling class on it
     Arguments : ics -- it will keep all the different scalings
@@ -215,7 +243,11 @@ def main():
         Scaling("scaling-3-5-6", [3,5,6]),
         Scaling("scaling-1-5-7", [1,5,7]),
         Translation("translation-x-1-4-6", [1,4,6], numpy.array([1,0,0])),
-        Rotation("rotation-x-1-5-7", [1,5,7], numpy.array([1,0,0]))
+        Rotation("rotation-x-1-5-7", [1,5,7], numpy.array([1,0,0])),
+        Composition("sum-rotations",
+            Rotation("rotation-y-2-3", [2,3], numpy.array([0,1,0])),
+            Rotation("rotation-x-1-5-7", [1,5,7], numpy.array([1,0,0])),
+        )
     ]
 
     prefix = sys.argv[1]
