@@ -4,6 +4,7 @@ import numpy
 
 from zebra import *
 
+
 def test_derivatives_scaling():
     N = 8
     ics = [
@@ -14,10 +15,45 @@ def test_derivatives_scaling():
     for ic in ics:
         check_derivatives(ic, N)
 
+
 def test_derivatives_translation():
     N = 8
     ic = Translation("translation-x-1-4-6", [1,4,6], numpy.array([1,0,0]))
     check_derivatives(ic, N)
+
+
+def test_derivatives_rotation():
+    N = 8
+    ic = Rotation("rotation-x-1-5-7", [1,5,7], numpy.array([1,0,0]))
+    check_derivatives(ic, N)
+
+
+def test_derivatives_composition():
+    N = 8
+    ic = Composition("sum-rotations",
+            Translation("translation-x-1-4-6", [1,4,6], numpy.array([1,0,0])),
+            Translation("translation-x-1-4-6", [1,2,6], numpy.array([1,0,0])),
+        )
+    check_derivatives(ic, N)
+
+
+def test_translation_commuative():
+    N = 8
+    part1 = Translation("translation-x-1-4-6", [1,4,6], numpy.array([1,0,0]))
+    part2 = Translation("translation-x-1-2-6", [1,2,6], numpy.array([1,0,0]))
+    ic1 = Composition("sum12", part1, part2)
+    ic2 = Composition("sum21", part2, part1)
+    check_commutative(ic1, ic2, N)
+
+
+def test_translation_rotation_commuative():
+    N = 8
+    part1 = Translation("translation-x-1-4-6", [1,4,6], numpy.array([1,0,0]))
+    part2 = Rotation("rotation-x-1-2-6", [1,2,6], numpy.array([1,0,0]))
+    ic1 = Composition("sum12", part1, part2)
+    ic2 = Composition("sum21", part2, part1)
+    check_commutative(ic1, ic2, N)
+
 
 def check_derivatives(ic, N):
     # generate an array with shape (8,3) where each element is a random number
@@ -30,6 +66,18 @@ def check_derivatives(ic, N):
     delta_approx = ic.derivatives(coordinates, 0)
     #print delta-delta_approx
     assert abs(delta-delta_approx).max() < 1e-3
+
+
+def check_commutative(ic1, ic2, N):
+    # generate an array with shape (8,3) where each element is a random number
+    # uniformly distributed between 0 and 1.
+    coordinates = numpy.random.uniform(0,1,(N,3))
+    q = 1
+    c0 = ic1.transform(coordinates, q)
+    c1 = ic2.transform(coordinates, q)
+    delta = (c1 - c0)
+    #print delta
+    assert abs(delta).max() < 1e-14
 
 
 
