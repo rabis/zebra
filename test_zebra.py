@@ -1,6 +1,6 @@
 
 
-import numpy
+import numpy, py.test
 
 from zebra import *
 
@@ -13,28 +13,33 @@ def test_derivatives_scaling():
         Scaling("scaling-1-5-7", [1,5,7]),
     ]
     for ic in ics:
-        check_derivatives(ic, N)
+        check_derivatives(ic, N, q=0)
+        check_derivatives(ic, N, q=1)
 
 
 def test_derivatives_translation():
     N = 8
     ic = Translation("translation-x-1-4-6", [1,4,6], numpy.array([1,0,0]))
-    check_derivatives(ic, N)
+    check_derivatives(ic, N, q=0)
+    check_derivatives(ic, N, q=1)
 
 
 def test_derivatives_rotation():
     N = 8
     ic = Rotation("rotation-x-1-5-7", [1,5,7], numpy.array([1,0,0]))
-    check_derivatives(ic, N)
+    check_derivatives(ic, N, q=0)
+    check_derivatives(ic, N, q=1)
 
 
+@py.test.mark.xfail
 def test_derivatives_composition():
     N = 8
     ic = Composition("sum-rotations",
-            Translation("translation-x-1-4-6", [1,4,6], numpy.array([1,0,0])),
-            Translation("translation-x-1-4-6", [1,2,6], numpy.array([1,0,0])),
-        )
-    check_derivatives(ic, N)
+        Rotation("rotation-x-1-4-6", [1,4,6], numpy.array([1,0,0])),
+        Rotation("rotation-x-1-4-6", [1,2,6], numpy.array([1,0,0])),
+    )
+    check_derivatives(ic, N, q=0)
+    check_derivatives(ic, N, q=1)
 
 
 def test_translation_commuative():
@@ -55,15 +60,15 @@ def test_translation_rotation_commuative():
     check_commutative(ic1, ic2, N)
 
 
-def check_derivatives(ic, N):
+def check_derivatives(ic, N, q):
     # generate an array with shape (8,3) where each element is a random number
     # uniformly distributed between 0 and 1.
     coordinates = numpy.random.uniform(0,1,(N,3))
     eps = 1e-4
-    c0 = ic.transform(coordinates, -0.5*eps)
-    c1 = ic.transform(coordinates, +0.5*eps)
+    c0 = ic.transform(coordinates, q-0.5*eps)
+    c1 = ic.transform(coordinates, q+0.5*eps)
     delta = (c1 - c0)/eps
-    delta_approx = ic.derivatives(coordinates, 0)
+    delta_approx = ic.derivatives(coordinates, q)
     #print delta-delta_approx
     assert abs(delta-delta_approx).max() < 1e-3
 
